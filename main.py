@@ -1,6 +1,8 @@
 import time
 from tqdm import tqdm
 
+import numpy as np
+
 import jax
 import jax.numpy as jnp
 import blackjax
@@ -16,12 +18,13 @@ if __name__ == "__main__":
     q_true = 0.8
     seed   = 42
     sigma  = 1
+    n_live = 500
+    PATH_SAVE = f'./'
 
     dict_data = get_data(q_true, seed, sigma)
 
     # | Define the Nested Sampling algorithm
     n_dims   = len(prior_dists)
-    n_live   = 100
     n_delete = int(n_live*0.5) # 50% if GPU
     num_mcmc_steps = n_dims * 3
 
@@ -73,8 +76,5 @@ if __name__ == "__main__":
 
     # Combine dead points and compute log evidence
     dead = jax.tree_map(lambda *args: jnp.concatenate(args), *dead)
-    logw = log_weights(rng_key, dead)
-    logZs = jax.scipy.special.logsumexp(logw, axis=0)
 
-    print(f"Runtime evidence: {state.sampler_state.logZ:.2f}")
-    print(f"Estimated evidence: {logZs.mean():.2f} ± {logZs.std():.2f}")
+    np.save(f'{PATH_SAVE}/samps_q{q_true}_sig{sigma}_seed{seed}_nlive{n_live}.npy', np.array(dead.particles))
