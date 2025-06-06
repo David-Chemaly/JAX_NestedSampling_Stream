@@ -29,7 +29,7 @@ if __name__ == "__main__":
     print("Setting up nested sampling algorithm...")
     algo = blackjax.nss(
         logprior_fn=logprior,
-        loglikelihood_fn=loglikelihood,
+        loglikelihood_fn=lambda p: loglikelihood(p, dict_data),
         num_delete=n_delete,
         num_inner_steps=num_mcmc_steps
     )
@@ -52,9 +52,10 @@ if __name__ == "__main__":
         state, dead_point = algo.step(subk, state)
         return (state, k), dead_point
 
+    # Evaluate initial loglikelihoods (optional pre-check)
     start = time.time()
-    init_key, _ = jax.random.split(init_key,2)
-    results = jax.vmap(loglikelihood)(sample_from_priors(init_key, n_live))
+    init_key, _ = jax.random.split(init_key, 2)
+    results = jax.vmap(lambda p: loglikelihood(p, dict_data))(sample_from_priors(init_key, n_live))
     end = time.time()
     print(f"Execution time: {end - start:.4f} seconds")
 
@@ -65,10 +66,9 @@ if __name__ == "__main__":
         while (not state.logZ_live - state.logZ < -3):
             (state, rng_key), dead_info = one_step((state, rng_key), None)
             dead.append(dead_info)
-            print()
-            # print(dead_info.update_info.evals.sum())
             print(f'logZ: {state.logZ_live - state.logZ:.4f}')
             pbar.update(n_delete)
+
     final_state = finalise(state, dead)
 
     # Combine dead points and compute log evidence
@@ -78,6 +78,3 @@ if __name__ == "__main__":
 
     print(f"Runtime evidence: {state.sampler_state.logZ:.2f}")
     print(f"Estimated evidence: {logZs.mean():.2f} ± {logZs.std():.2f}")
-
-
-
