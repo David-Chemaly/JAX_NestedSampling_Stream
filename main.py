@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import blackjax
 from blackjax.ns.utils import finalise, log_weights
-
+print(jax.devices())
 
 from data import get_data
 from prior import prior_dists, logprior, sample_from_priors
@@ -61,7 +61,8 @@ if __name__ == "__main__":
     results = jax.vmap(lambda p: loglikelihood(p, dict_data))(sample_from_priors(init_key, n_live))
     end = time.time()
     print(f"Execution time: {end - start:.4f} seconds")
-
+    print(jax.devices())
+    
     dead = []
 
     print("Running nested sampling...")
