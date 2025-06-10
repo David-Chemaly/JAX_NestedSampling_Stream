@@ -1,18 +1,20 @@
 import jax
 import jax.numpy as jnp
 from jax import grad, hessian, random
-import jax.scipy.special as jsp
-jax.config.update("jax_enable_x64", True)
+# import jax.scipy.special as jsp
+# jax.config.update("jax_enable_x64", True)
 
 from astropy import units as auni
 
 from astropy.constants import G
 G = G.to(auni.kpc/auni.Msun*auni.km**2/auni.s**2).value # kpc (km/s)^2/Msun
 
-KPC_TO_KM  = jnp.array( (1 * auni.kpc/auni.km).to(auni.km/auni.km).value)
-GYR_TO_S   = jnp.array( (1 * auni.Gyr/auni.s).to(auni.s/auni.s).value)
-N_STEPS    = 500 # this comes from fixed time step of 10Myr with a maximum interation time of 6Gyr
-N_BINS     = 36
+KPC_TO_KM    = jnp.array( (1 * auni.kpc/auni.km).to(auni.km/auni.km).value)
+GYR_TO_S     = jnp.array( (1 * auni.Gyr/auni.s).to(auni.s/auni.s).value)
+# N_particles must be even and divisible by N_steps
+N_PARTICLES  = 10100 # Denis wants more particles 
+N_STEPS      = 100 # Time resolution
+N_BINS       = 36
 
 # Precompute constants once
 _v1 = jnp.array([0.0, 0.0, 1.0])
@@ -243,13 +245,13 @@ def get_rj_vj_R(hessians, orbit_sat, mass_sat):
 def create_ic_particle_spray(orbit_sat, rj, vj, R, tail=0, key=random.PRNGKey(111)):
     N = rj.shape[0]
 
-    tile = jax.lax.cond(tail == 0, lambda _: jnp.tile(jnp.array([1, -1]), N),
-                        lambda _: jax.lax.cond(tail == 1, lambda _: jnp.tile(jnp.array([-1, -1]), N),
-                        lambda _: jnp.tile(jnp.array([1, 1]), N), None), None)
+    tile = jax.lax.cond(tail == 0, lambda _: jnp.tile(jnp.array([1, -1]), N_PARTICLES//2),
+                        lambda _: jax.lax.cond(tail == 1, lambda _: jnp.tile(jnp.array([-1, -1]), N_PARTICLES//2),
+                        lambda _: jnp.tile(jnp.array([1, 1]), N_PARTICLES//2), None), None)
 
-    rj = jnp.repeat(rj, 2) * tile
-    vj = jnp.repeat(vj, 2) * tile
-    R  = jnp.repeat(R, 2, axis=0)  # Shape: (2N, 3, 3)
+    rj = jnp.repeat(rj, N_PARTICLES//N_STEPS) * tile
+    vj = jnp.repeat(vj, N_PARTICLES//N_STEPS) * tile
+    R  = jnp.repeat(R, N_PARTICLES//N_STEPS, axis=0)  # Shape: (2N, 3, 3)
 
     # Parameters for position and velocity offsets
     mean_x, disp_x = 2.0, 0.5
@@ -259,10 +261,10 @@ def create_ic_particle_spray(orbit_sat, rj, vj, R, tail=0, key=random.PRNGKey(11
 
     # Generate random samples for position and velocity offsets
     key, subkey_x, subkey_z, subkey_vy, subkey_vz = random.split(key, 5)
-    rx = random.normal(subkey_x, shape=(2 * N,)) * disp_x + mean_x
-    rz = random.normal(subkey_z, shape=(2 * N,)) * disp_z * rj
-    rvy = (random.normal(subkey_vy, shape=(2 * N,)) * disp_vy + mean_vy) * vj * rx
-    rvz = random.normal(subkey_vz, shape=(2 * N,)) * disp_vz * vj
+    rx = random.normal(subkey_x, shape=(N_PARTICLES//N_STEPS * N,)) * disp_x + mean_x
+    rz = random.normal(subkey_z, shape=(N_PARTICLES//N_STEPS * N,)) * disp_z * rj
+    rvy = (random.normal(subkey_vy, shape=(N_PARTICLES//N_STEPS * N,)) * disp_vy + mean_vy) * vj * rx
+    rvz = random.normal(subkey_vz, shape=(N_PARTICLES//N_STEPS * N,)) * disp_vz * vj
     rx *= rj  # Scale x displacement by rj
 
     # Position and velocity offsets in the satellite reference frame
@@ -270,13 +272,13 @@ def create_ic_particle_spray(orbit_sat, rj, vj, R, tail=0, key=random.PRNGKey(11
     offset_vel = jnp.column_stack([jnp.zeros_like(rx), rvy, rvz])  # Shape: (2N, 3)
 
     # Transform to the host-centered frame
-    orbit_sat_repeated = jnp.repeat(orbit_sat, 2, axis=0)  # More efficient than tile+reshape
+    orbit_sat_repeated = jnp.repeat(orbit_sat, N_PARTICLES//N_STEPS, axis=0)  # More efficient than tile+reshape
     offset_pos_transformed = jnp.einsum('ni,nij->nj', offset_pos, R)
     offset_vel_transformed = jnp.einsum('ni,nij->nj', offset_vel, R)
 
     ic_stream = orbit_sat_repeated + jnp.concatenate([offset_pos_transformed, offset_vel_transformed], axis=-1)
 
-    return ic_stream  # Shape: (2N, 6)
+    return ic_stream  # Shape: (N_particule, 6)
 
 @jax.jit
 def leapfrog_stream_step(state, dt, logM, Rs, q, dirx, diry, dirz, logm, rs):
@@ -321,37 +323,15 @@ def leapfrog_stream_step(state, dt, logM, Rs, q, dirx, diry, dirz, logm, rs):
     return (x_new, y_new, z_new, vx_new, vy_new, vz_new, xp_new, yp_new, zp_new, vxp_new, vyp_new, vzp_new)
 
 @jax.jit
-def forward_integrate_stream_leapfrog(index, x0, y0, z0, vx0, vy0, vz0,
-                                      xv_sat, logM, Rs, q,
-                                      dirx, diry, dirz, logm, rs, time):
-    # State is a flat tuple of six scalars.
-    xp, yp, zp, vxp, vyp, vzp = xv_sat[index]
-
-    state = (x0, y0, z0, vx0, vy0, vz0, xp, yp, zp, vxp, vyp, vzp)
-    dt_sat = time / N_STEPS
-
-    time_here = time - index * dt_sat
-    dt_here = time_here / N_STEPS
-
-    def step_fn(state, _):
-        # Use only the first three elements of the satellite row.
-        new_state = leapfrog_stream_step(state, dt_here,
-                                         logM, Rs, q, dirx, diry, dirz, logm, rs)
-
-        # The carry and output must have the same structure.
-        return new_state, jnp.stack(new_state)
-
-    # Run integration over the satellite trajectory (using all but the last row).
-    _, trajectory = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1)
-    # 'trajectory' is a tuple of six arrays, each of shape (N_STEPS,).
-
-    # Ensure trajectory shape is (MAX_LENGHT-1, 6)
-    trajectory = jnp.array(trajectory)[:, :6]  # Shape: (MAX_LENGHT-1, 6)
-
-    # Correct concatenation
-    trajectory = jnp.vstack([jnp.array(state)[None, :6], trajectory])  # Shape: (MAX_LENGHT, 6)
-
-    return trajectory
+def unwrap_step(theta_t, theta_unwrapped_prev):
+    # bring the previous unwrapped back into [0, 2π)
+    theta_prev_raw = jnp.mod(theta_unwrapped_prev, 2 * jnp.pi)
+    # raw increment
+    dtheta = theta_t - theta_prev_raw
+    # wrap into (–π, π]
+    dtheta = (dtheta + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    # accumulate
+    return theta_unwrapped_prev + dtheta
 
 @jax.jit
 def forward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0, logM, Rs, q, dirx, diry, dirz, time):
@@ -378,27 +358,67 @@ def forward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0, logM, Rs, q, dir
     return trajectory, time_steps
 
 @jax.jit
+def forward_integrate_stream_leapfrog(index, x0, y0, z0, vx0, vy0, vz0,
+                                        xv_sat, logM, Rs, q,
+                                        dirx, diry, dirz, logm, rs, time):
+    # State is a flat tuple of six scalars.
+    xp, yp, zp, vxp, vyp, vzp = xv_sat[index]
+
+    theta0 = jnp.arctan2(y0, x0)
+    theta0 = jax.lax.cond(theta0 < 0, lambda x: x + 2 * jnp.pi, lambda x: x, theta0)
+
+    state = (theta0, x0, y0, z0, vx0, vy0, vz0, xp, yp, zp, vxp, vyp, vzp)
+    dt_sat = time / N_STEPS
+
+    time_here = time - index * dt_sat
+    dt_here = time_here / N_STEPS
+
+    def step_fn(state, _):
+        # Use only the first three elements of the satellite row.
+        theta0, x0, y0, z0, vx0, vy0, vz0, xp, yp, zp, vxp, vyp, vzp = state
+
+        initial_conditions = (x0, y0, z0, vx0, vy0, vz0, xp, yp, zp, vxp, vyp, vzp)
+        final_conditions = leapfrog_stream_step(initial_conditions, dt_here,
+                                            logM, Rs, q, dirx, diry, dirz, logm, rs)
+        
+        theta = jnp.arctan2(final_conditions[1], final_conditions[0])
+        theta = jax.lax.cond(theta < 0, lambda x: x + 2 * jnp.pi, lambda x: x, theta)
+
+        theta = unwrap_step(theta, theta0)
+
+        new_state = (theta, *final_conditions)
+
+        # The carry and output must have the same structure.
+        return new_state, _ # jnp.stack(new_state)
+
+    # Run integration over the satellite trajectory (using all but the last row).
+    trajectory, _ = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1)
+    # 'trajectory' is a tuple of six arrays, each of shape (N_STEPS,).
+
+    return jnp.array(trajectory)
+
+@jax.jit
 def generate_stream(ic_particle_spray, xv_sat, logM, Rs, q,
                     dirx, diry, dirz, logm, rs, time):
     # There are 16 parameters to forward_integrate_stream_leapfrog:
     # 6 come from ic_particle_spray (one per coordinate),
     # and the remaining 10 are shared (xv_sat, logM, Rs, q, dirx, diry, dirz, logm, rs, time).
-    index = jnp.repeat(jnp.arange(0, N_STEPS, 1), 2)
+    index = jnp.repeat(jnp.arange(0, N_STEPS, 1), N_PARTICLES// N_STEPS)  # Shape: (N_PARTICLES,)
 
     xv_stream = jax.vmap(
         forward_integrate_stream_leapfrog,
         in_axes=(0, 0, 0, 0, 0, 0, 0,  # map over each column of ic_particle_spray
-                 None, None, None, None, None, None, None, None, None, None)  # shared arguments
+                    None, None, None, None, None, None, None, None, None, None)  # shared arguments
     )(index,
-      ic_particle_spray[:, 0],  # x0
-      ic_particle_spray[:, 1],  # y0
-      ic_particle_spray[:, 2],  # z0
-      ic_particle_spray[:, 3],  # vx0
-      ic_particle_spray[:, 4],  # vy0
-      ic_particle_spray[:, 5],  # vz0
-      xv_sat, # (xp, yp, zp, vxp, vyp, vzp)
-      logM, Rs, q,
-      dirx, diry, dirz, logm, rs, time)
+        ic_particle_spray[:, 0],  # x0
+        ic_particle_spray[:, 1],  # y0
+        ic_particle_spray[:, 2],  # z0
+        ic_particle_spray[:, 3],  # vx0
+        ic_particle_spray[:, 4],  # vy0
+        ic_particle_spray[:, 5],  # vz0
+        xv_sat, # (xp, yp, zp, vxp, vyp, vzp)
+        logM, Rs, q,
+        dirx, diry, dirz, logm, rs, time)
 
     return xv_stream
 
@@ -408,76 +428,6 @@ def jax_unwrap(theta):
     dtheta_unwrapped = jnp.where(dtheta < -jnp.pi, dtheta + 2 * jnp.pi,
                          jnp.where(dtheta > jnp.pi, dtheta - 2 * jnp.pi, dtheta))
     return jnp.concatenate([theta[:1], theta[:1] + jnp.cumsum(dtheta_unwrapped)])
-
-@jax.jit
-def unwrap_theta_stream(gamma, theta_stream):
-    sort_idx = jnp.argsort(gamma)
-
-    bool_pos      = jnp.where(gamma > 0, 1, 0)
-    gamma_pos_nan = jnp.where(gamma > 0, gamma, 0)
-    theta_pos_nan = (theta_stream * bool_pos)[jnp.argsort(gamma_pos_nan)]
-    theta_pos_nan = jax_unwrap(theta_pos_nan)
-
-    bool_neg      = jnp.where(gamma < 0, 1, 0)
-    gamma_neg_nan = jnp.where(gamma < 0, gamma, 0)
-    theta_neg_nan = (theta_stream * bool_neg)[jnp.flip(jnp.argsort(gamma_neg_nan))]
-    theta_neg_nan = jax_unwrap(theta_neg_nan)
-
-    theta_nan = jnp.nan_to_num(jnp.flip(theta_neg_nan), nan=0) +  jnp.nan_to_num(theta_pos_nan, nan=0)
-
-    theta_aligned_nan = jnp.zeros_like(theta_stream)
-    theta_aligned_nan = theta_aligned_nan.at[sort_idx].set(theta_nan)
-
-    return theta_aligned_nan
-
-@jax.jit
-def get_stream_and_unwrap_theta(xv_stream, xv_sat):
-    # === Process satellite angles ===
-    # Compute angles (in radians) for each satellite entry.
-    theta_sat = jnp.arctan2(xv_sat[:, 1], xv_sat[:, 0])
-    # Shift negative angles into [0, 2*pi].
-    theta_sat = jnp.where(theta_sat < 0, theta_sat + 2 * jnp.pi, theta_sat)
-    # Use our jax-unwrapped version to remove discontinuities.
-    theta_sat = jax_unwrap(theta_sat)
-    # Count how many complete 2pi rotations have been accumulated (integer division).
-    theta_count = jnp.floor_divide(theta_sat, 2 * jnp.pi)
-
-    # === Process stream angles ===
-    # Compute angles for each value in the stream.
-    theta_stream = jnp.arctan2(xv_stream[:, :, 1], xv_stream[:, :, 0])
-    theta_stream = jnp.where(theta_stream < 0, theta_stream + 2 * jnp.pi, theta_stream)
-    # Unwrap each row separately using vmap.
-    theta_stream = jax.vmap(jax_unwrap)(theta_stream)
-    theta_stream_count = jnp.floor_divide(theta_stream, 2 * jnp.pi)
-
-    # === Combine with a diagonal matrix ===
-    # Create a matrix from a reversed identity and repeat it along the 0th axis.
-    # diagonal_matrix = jnp.repeat(jnp.eye(xv_sat.shape[0])[::-1], 2, axis=0)
-
-    # The final theta_stream is formed from:
-    #   - a weighted sum of the stream angles,
-    #   - an offset from the final satellite angle,
-    #   - and adding the appropriate number of 2pi rotations.
-    final_theta_stream = (
-        theta_stream[:, -1] #jnp.sum(theta_stream * diagonal_matrix, axis=1)
-        - theta_sat[-1]
-        + jnp.repeat(theta_count, 2) * 2 * jnp.pi
-    )
-
-    algin_reference = theta_sat[-1]- theta_count[-1]*(2*jnp.pi) # Make sure the angle of reference is at theta=0
-
-    final_theta_stream += (1 - jnp.sign(algin_reference - jnp.pi))/2 * algin_reference + \
-                          (1 + jnp.sign(algin_reference - jnp.pi))/2 * (algin_reference - 2 * jnp.pi)
-
-    # === Compute a result from the stream ===
-    # Here we multiply the original stream with the diagonal matrix
-    # along an extra singleton dimension (to allow broadcasting) and sum.
-    # result = jnp.sum(xv_stream * diagonal_matrix[..., None], axis=1)
-
-    # Return the two components from `result`, the final unwrapped theta,
-    # and, for example, the last column of the result (since v_result was undefined).
-    return  xv_stream[:, -1, 0], xv_stream[:, -1, 1], final_theta_stream, xv_stream[:, -1, -1]   #result[:, 0], result[:, 1], final_theta_stream, result[:, -1]
-
 
 @jax.jit
 def bin_stream(theta_stream, r_stream, x_stream, y_stream, vz_stream, min_count):
@@ -511,7 +461,7 @@ def bin_stream(theta_stream, r_stream, x_stream, y_stream, vz_stream, min_count)
 
 @jax.jit
 def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
-                     x0, y0, z0, vx0, vy0, vz0, time, alpha, tail, min_count):
+                        x0, y0, z0, vx0, vy0, vz0, time, alpha, tail, min_count):
     # # Compute the satellite orbit integration.
     # xv_sat, _ = backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
     #                                                logM, Rs, q, dirx, diry, dirz,
@@ -524,8 +474,8 @@ def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
     # Condition: check that all differences in theta_sat are positive.
     # This ensures that the satellite is moving in a consistent direction.
     xv_sat, _ = backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
-                                                   logM, Rs, q, dirx, diry, dirz,
-                                                   time)
+                                                    logM, Rs, q, dirx, diry, dirz,
+                                                    time)
     theta_sat = jnp.arctan2(xv_sat[:, 1], xv_sat[:, 0])
     theta_sat = jnp.where(theta_sat < 0, theta_sat + 2 * jnp.pi, theta_sat)
     theta_sat = jax_unwrap(theta_sat)
@@ -535,27 +485,47 @@ def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
     # # Define the branch that computes the stream.
     def true_branch(_):
         xv_sat, _ = backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
-                                                   logM, Rs, q, dirx, diry, dirz,
-                                                   time)
+                                                    logM, Rs, q, dirx, diry, dirz,
+                                                    time)
+        theta_sat = jnp.arctan2(xv_sat[:, 1], xv_sat[:, 0])
+        theta_sat = jnp.where(theta_sat < 0, theta_sat + 2 * jnp.pi, theta_sat)
+        theta_sat = jax_unwrap(theta_sat)
 
         xv_sat_forward, _ = forward_integrate_orbit_leapfrog(xv_sat[0, 0], xv_sat[0, 1], xv_sat[0, 2], xv_sat[0,3], xv_sat[0, 4], xv_sat[0, 5],
-                                                   logM, Rs, q, dirx, diry, dirz,
-                                                   time*alpha)
+                                                    logM, Rs, q, dirx, diry, dirz,
+                                                    time*alpha)
 
         hessians = vector_NFW_Hessian(xv_sat_forward[:, 0], xv_sat_forward[:, 1], xv_sat_forward[:, 2],
                                         logM, Rs, q, dirx, diry, dirz)
         rj, vj, R = get_rj_vj_R(hessians, xv_sat_forward, 10 ** logm)
         ic_particle_spray = create_ic_particle_spray(xv_sat_forward, rj, vj, R, tail)
+
         xv_stream = generate_stream(ic_particle_spray, xv_sat_forward, logM, Rs, q,
                                     dirx, diry, dirz, logm, rs, time)
-        x_stream, y_stream, theta_stream, vz_stream = \
-            get_stream_and_unwrap_theta(xv_stream, xv_sat_forward)
+        
+        # === Process angles as a function of Progenitor ===
+        # Count how many complete 2pi rotations have been accumulated (integer division).
+        theta_count = jnp.floor_divide(theta_sat, 2 * jnp.pi)
 
-        # Remove last 10 points
-        x_stream = x_stream[:-10]
-        y_stream = y_stream[:-10]
-        theta_stream = theta_stream[:-10]
-        vz_stream = vz_stream[:-10]
+        final_theta_stream = (
+            xv_stream[:, 0] #jnp.sum(theta_stream * diagonal_matrix, axis=1)
+            - theta_sat[-1]
+            + jnp.repeat(theta_count,  N_PARTICLES// N_STEPS) * 2 * jnp.pi
+            )
+
+        algin_reference = theta_sat[-1]- theta_count[-1]*(2*jnp.pi) # Make sure the angle of reference is at theta=0
+
+        final_theta_stream += (1 - jnp.sign(algin_reference - jnp.pi))/2 * algin_reference + \
+                                (1 + jnp.sign(algin_reference - jnp.pi))/2 * (algin_reference - 2 * jnp.pi)
+        
+        # x_stream, y_stream, theta_stream, vz_stream = \
+        #     get_stream_and_unwrap_theta(xv_stream, xv_sat_forward)
+
+        # Remove the last 1% of particules
+        x_stream     = xv_stream[:-(N_PARTICLES//100), 1]
+        y_stream     = xv_stream[:-(N_PARTICLES//100), 2]
+        theta_stream = final_theta_stream[:-(N_PARTICLES//100)]
+        vz_stream    = xv_stream[:-(N_PARTICLES//100), -1]
 
         r_stream = jnp.sqrt(x_stream**2 + y_stream**2)
         r_meds, w_meds, x_meds, y_meds, vz_meds = \
@@ -574,15 +544,26 @@ def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
             # For example, here we assume:
             #   - The stream outputs have shape (1000,) (first 4 outputs).
             #   - The binned outputs have shape (36,) (last 4 outputs).
-            dummy_theta = jnp.full((2*N_STEPS-10,), jnp.nan, dtype=jnp.float64)
-            dummy_x     = jnp.full((2*N_STEPS-10,), jnp.nan, dtype=jnp.float64)
-            dummy_y     = jnp.full((2*N_STEPS-10,), jnp.nan, dtype=jnp.float64)
-            dummy_vz    = jnp.full((2*N_STEPS-10,), jnp.nan, dtype=jnp.float64)
-            dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+
+            # dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            # dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            # dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            # dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            # dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            # dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            # dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            # dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            # dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+
             return dummy_theta, dummy_x, dummy_y, dummy_vz, dummy_r_meds, dummy_w_meds, dummy_x_meds, dummy_y_meds, dummy_vz_meds
 
     # Use lax.cond to select the branch.
