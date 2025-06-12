@@ -192,7 +192,7 @@ def backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0, logM, Rs, q, di
         return new_state, jnp.stack(new_state)  # Ensuring shape consistency
 
     # Run JAX optimized loop (reverse integration order)
-    _, trajectory = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1)
+    _, trajectory = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1, unroll=True)
 
     # Ensure trajectory shape is (MAX_LENGHT-1, 6)
     trajectory = jnp.array(trajectory)  # Shape: (MAX_LENGHT-1, 6)
@@ -344,7 +344,7 @@ def forward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0, logM, Rs, q, dir
         return new_state, jnp.stack(new_state)  # Ensuring shape consistency
 
     # Run JAX optimized loop (reverse integration order)
-    _, trajectory = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1)
+    _, trajectory = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1, unroll=True)
 
     # Ensure trajectory shape is (MAX_LENGHT-1, 6)
     trajectory = jnp.array(trajectory)  # Shape: (MAX_LENGHT-1, 6)
@@ -392,7 +392,7 @@ def forward_integrate_stream_leapfrog(index, x0, y0, z0, vx0, vy0, vz0,
         return new_state, _ # jnp.stack(new_state)
 
     # Run integration over the satellite trajectory (using all but the last row).
-    trajectory, _ = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1)
+    trajectory, _ = jax.lax.scan(step_fn, state, None, length=N_STEPS - 1, unroll=True)
     # 'trajectory' is a tuple of six arrays, each of shape (N_STEPS,).
 
     return jnp.array(trajectory)
