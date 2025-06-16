@@ -1,4 +1,5 @@
 import time
+import pickle
 from tqdm import tqdm
 
 import numpy as np
@@ -6,12 +7,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import blackjax
-from blackjax.ns.utils import finalise, log_weights
+from blackjax.ns.utils import finalise
 print(jax.devices())
 
-from data import get_data
-from prior import prior_dists, logprior, sample_from_priors
-from loglikelihood import loglikelihood
+from data import get_data_stream
+from prior import prior_dists_stream, logprior_stream, sample_from_priors_stream
+from loglikelihood import loglikelihood_stream
 
 if __name__ == "__main__":
     # Get data
@@ -19,20 +20,20 @@ if __name__ == "__main__":
     seed   = 42
     sigma  = 1
     n_live = 500
-    PATH_SAVE = f'./'
+    PATH_SAVE = f'.'
 
-    dict_data = get_data(q_true, seed, sigma)
+    dict_data = get_data_stream(q_true, seed, sigma)
 
     # | Define the Nested Sampling algorithm
-    n_dims   = len(prior_dists)
+    n_dims   = len(prior_dists_stream)
     n_delete = int(n_live*0.5) # 50% if GPU
     num_mcmc_steps = n_dims * 3
 
     # Initialise the nested sampling algorithm using Blackjax
     print("Setting up nested sampling algorithm...")
     algo = blackjax.nss(
-        logprior_fn=logprior,
-        loglikelihood_fn=lambda p: loglikelihood(p, dict_data),
+        logprior_fn=logprior_stream,
+        loglikelihood_fn=lambda p: loglikelihood_stream(p, dict_data),
         num_delete=n_delete,
         num_inner_steps=num_mcmc_steps
     )
@@ -41,7 +42,7 @@ if __name__ == "__main__":
     rng_key = jax.random.PRNGKey(0)
     rng_key, init_key = jax.random.split(rng_key)
 
-    initial_particles = sample_from_priors(init_key, n_live)
+    initial_particles = sample_from_priors_stream(init_key, n_live)
     print("Initial particles generated, shape:", initial_particles.shape)
 
     # Initialise the sampler state
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     # Evaluate initial loglikelihoods (optional pre-check)
     start = time.time()
     init_key, _ = jax.random.split(init_key, 2)
-    results = jax.vmap(lambda p: loglikelihood(p, dict_data))(sample_from_priors(init_key, n_live))
+    results = jax.vmap(lambda p: loglikelihood_stream(p, dict_data))(sample_from_priors_stream(init_key, n_live))
     end = time.time()
     print(f"Execution time: {end - start:.4f} seconds")
     print(jax.devices())
@@ -75,7 +76,5 @@ if __name__ == "__main__":
 
     final_state = finalise(state, dead)
 
-    # Combine dead points and compute log evidence
-    dead = jax.tree_map(lambda *args: jnp.concatenate(args), *dead)
-
-    np.save(f'{PATH_SAVE}/samps_q{q_true}_sig{sigma}_seed{seed}_nlive{n_live}.npy', np.array(dead.particles))
+    with open(f'{PATH_SAVE}/stream_final_state_nlive{n_live}_ndelete{n_delete}_seed{seed}.pkl', 'wb') as f:
+        pickle.dump(final_state, f)

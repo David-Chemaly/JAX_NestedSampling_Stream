@@ -462,15 +462,6 @@ def bin_stream(theta_stream, r_stream, x_stream, y_stream, vz_stream, min_count)
 @jax.jit
 def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
                         x0, y0, z0, vx0, vy0, vz0, time, alpha, tail, min_count):
-    # # Compute the satellite orbit integration.
-    # xv_sat, _ = backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
-    #                                                logM, Rs, q, dirx, diry, dirz,
-    #                                                time)
-    # # Compute polar angle for satellite positions.
-    # theta_sat = jnp.arctan2(xv_sat[:, 1], xv_sat[:, 0])
-    # theta_sat = jnp.where(theta_sat < 0, theta_sat + 2 * jnp.pi, theta_sat)
-    # theta_sat = jax_unwrap(theta_sat)
-
     # Condition: check that all differences in theta_sat are positive.
     # This ensures that the satellite is moving in a consistent direction.
     xv_sat, _ = backward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
@@ -568,6 +559,27 @@ def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
 
     # Use lax.cond to select the branch.
     return jax.lax.cond(cond, true_branch, false_branch, operand=None)
+
+@jax.jit
+def jax_stream_orbit(logM, Rs, q, dirx, diry, dirz,
+                        x0, y0, z0, vx0, vy0, vz0, time, alpha, min_count=0):
+
+    xv_sat, _ = forward_integrate_orbit_leapfrog(x0, y0, z0, vx0, vy0, vz0,
+                                            logM, Rs, q, dirx, diry, dirz,
+                                            time*alpha)
+    x_sat = xv_sat[:, 0]
+    y_sat = xv_sat[:, 1]
+    vz_sat = xv_sat[:, -1]
+    r_sat = jnp.sqrt(x_sat**2+y_sat**2)
+
+    theta_sat = jnp.arctan2(y_sat, x_sat)
+    theta_sat = jnp.where(theta_sat < 0, theta_sat + 2 * jnp.pi, theta_sat)
+    theta_sat = jax_unwrap(theta_sat)
+
+    r_meds, w_meds, x_meds, y_meds, vz_meds = bin_stream(theta_sat, r_sat, x_sat, y_sat, vz_sat, min_count=min_count)
+
+    return theta_sat, x_sat, y_sat, vz_sat, \
+            r_meds, w_meds, x_meds, y_meds, vz_meds
 
 @jax.jit
 def sample_params_data(q_true, seed):
