@@ -38,15 +38,36 @@ if __name__ == "__main__":
         num_inner_steps=num_mcmc_steps
     )
 
-    # Initialise random key and generate initial particles
-    rng_key = jax.random.PRNGKey(0)
-    rng_key, init_key = jax.random.split(rng_key)
+    print("Algorithm set up with parameters:")
+    print(f"n_dims: {n_dims}, n_delete: {n_delete}, num_mcmc_steps: {num_mcmc_steps}")
 
-    initial_particles = sample_from_priors_stream(init_key, n_live)
-    print("Initial particles generated, shape:", initial_particles.shape)
+    print("Looking for good initial particles...")
+    ### Make sure all initial particles are good ###
+    index_good = 0
+    good_initial_particles = jnp.array([])
+    while index_good < n_live:
+        # Initialise random key and generate initial particles
+        rng_key = jax.random.PRNGKey(np.random.randint(10000000000))
+        rng_key, init_key = jax.random.split(rng_key)
+
+        initial_particles = sample_from_priors_stream(init_key, n_live)
+        logl = jax.vmap(lambda p: loglikelihood_stream(p, dict_data))(initial_particles)
+
+        arg_good = jnp.where(jnp.isfinite(logl))[0]
+
+        if len(good_initial_particles) == 0:
+            good_initial_particles = initial_particles[arg_good]
+        else:
+            good_initial_particles = jnp.concatenate([good_initial_particles, initial_particles[arg_good]], axis=0)
+
+        index_good += len(arg_good)
+        print(f"Found {index_good} good initial particles out of {n_live} sampled.")
+
+    good_initial_particles = good_initial_particles[:n_live]
+    print("Initial particles generated, shape:", good_initial_particles.shape)
 
     # Initialise the sampler state
-    state = algo.init(initial_particles)
+    state = algo.init(good_initial_particles)
 
     # Define a one-step function for the nested sampling (JIT compiled for efficiency)
     @jax.jit
@@ -66,6 +87,7 @@ if __name__ == "__main__":
     
     dead = []
 
+    rng_key = jax.random.PRNGKey(0)
     print("Running nested sampling...")
     with tqdm(desc="Dead points", unit=" dead points") as pbar:
         while (not state.logZ_live - state.logZ < -3):
