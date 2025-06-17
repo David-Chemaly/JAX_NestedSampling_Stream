@@ -46,6 +46,7 @@ if __name__ == "__main__":
     index_good = 0
     good_initial_particles = jnp.array([])
     while index_good < n_live:
+        start = time.time()
         # Initialise random key and generate initial particles
         rng_key = jax.random.PRNGKey(np.random.randint(10000000000))
         rng_key, init_key = jax.random.split(rng_key)
@@ -61,7 +62,8 @@ if __name__ == "__main__":
             good_initial_particles = jnp.concatenate([good_initial_particles, initial_particles[arg_good]], axis=0)
 
         index_good += len(arg_good)
-        print(f"Found {index_good} good initial particles out of {n_live} sampled.")
+        end = time.time()
+        print(f"Found {index_good} good initial particles out of {n_live} sampled in {end - start:.4f} seconds.")
 
     good_initial_particles = good_initial_particles[:n_live]
     print("Initial particles generated, shape:", good_initial_particles.shape)
