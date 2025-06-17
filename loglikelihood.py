@@ -19,7 +19,7 @@ def loglikelihood_stream(p, dict_data):
 
     y0 = 0.
 
-    _, _, _, _, r_meds, w_meds, _, _, _  = jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs, x0, y0, z0, vx0, vy0, vz0, time, alpha, tail=0, min_count=5)
+    _, _, _, _, r_meds, w_meds, _, _, _  = jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs, x0, y0, z0, vx0, vy0, vz0, time, alpha, tail=0, min_count=101)
 
     mask = ~jnp.isnan(r_data)
 
