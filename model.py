@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import grad, hessian, random
 # import jax.scipy.special as jsp
-# jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", True)
 
 from astropy import units as auni
 
@@ -535,25 +535,25 @@ def jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs,
             # For example, here we assume:
             #   - The stream outputs have shape (1000,) (first 4 outputs).
             #   - The binned outputs have shape (36,) (last 4 outputs).
-            dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
-            dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
-            dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
-            dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
-            dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
-            dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
-            dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
-            dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
-            dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            # dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            # dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            # dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            # dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float32)
+            # dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            # dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            # dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            # dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
+            # dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float32)
 
-            # dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
-            # dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
-            # dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
-            # dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
-            # dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            # dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            # dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            # dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
-            # dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_theta = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            dummy_x     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            dummy_y     = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            dummy_vz    = jnp.full((99*N_PARTICLES//100,), jnp.nan, dtype=jnp.float64)
+            dummy_r_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_w_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_x_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_y_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
+            dummy_vz_meds = jnp.full((N_BINS,), jnp.nan, dtype=jnp.float64)
 
             return dummy_theta, dummy_x, dummy_y, dummy_vz, dummy_r_meds, dummy_w_meds, dummy_x_meds, dummy_y_meds, dummy_vz_meds
 
