@@ -28,7 +28,7 @@ def loglikelihood_stream(p, dict_data):
     n_bad = jnp.sum(nan_mask)
 
     def all_nan_case(_):
-        return -jnp.inf #BAD_VAL * r_data.shape[0]
+        return BAD_VAL * r_data.shape[0] #-jnp.inf #
 
     def some_good_case(_):
         def good_fit_case(_):
@@ -36,7 +36,7 @@ def loglikelihood_stream(p, dict_data):
             return -0.5 * jnp.nansum(res)
 
         def bad_fit_case(_):
-            return -jnp.inf #BAD_VAL * n_bad
+            return BAD_VAL * n_bad #-jnp.inf #
 
         return jax.lax.cond(n_bad == 0, good_fit_case, bad_fit_case, operand=None)
 

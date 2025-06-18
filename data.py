@@ -23,7 +23,7 @@ def get_data_stream(q_true, seed, sigma=1, tail=0, min_count=11, n_theta_min=13,
             if crit1 and crit2 and crit3 and crit4 and crit5 and crit6:
                 is_data = True
 
-    params = np.array([logM, Rs, q, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, time])
+    params = np.array([logM, Rs, q, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, time, alpha])
 
     r_err = np.abs(r_meds)*sigma/100
     r_noise = rng.normal(0, r_err)
@@ -56,7 +56,7 @@ def get_data_orbit(q_true, seed, sigma=1, n_theta_min=13, r_min=20, r_max=500, l
             if crit1 and crit2 and crit3 and crit4 and crit5 and crit6:
                 is_data = True
 
-    params = np.array([logM, Rs, q, dirx, diry, dirz, x0, z0, vx0, vy0, vz0, time])
+    params = np.array([logM, Rs, q, dirx, diry, dirz, x0, z0, vx0, vy0, vz0, time, alpha])
 
     r_err = np.abs(r_meds)*sigma/100
     r_noise = rng.normal(0, r_err)

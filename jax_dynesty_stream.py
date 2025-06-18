@@ -54,7 +54,6 @@ if __name__ == "__main__":
     sigma  = 1
     nlive  = 1000
     ndim   = 15
-    queue_size = 100
     PATH_SAVE = f'.'
 
     dict_data = get_data_stream(q_true, seed, sigma)
