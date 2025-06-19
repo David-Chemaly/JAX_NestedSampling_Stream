@@ -52,13 +52,13 @@ def prior_transform(p):
             t1, a1, sig1]
 
 @jax.jit
-def loglikelihood_stream(p, dict_data):
+def loglikelihood_stream(p, r_data, r_err):
     logM, Rs, q, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, time, alpha, sig = p
 
-    r_data = dict_data['r_data']
-    w_data = dict_data['w_data']
-    r_err = dict_data['r_err']
-    w_err = dict_data['w_err']
+    # r_data = dict_data['r_data']
+    # w_data = dict_data['w_data']
+    # r_err = dict_data['r_err']
+    # w_err = dict_data['w_err']
 
     y0 = 0.
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     dns = dynesty.DynamicNestedSampler(loglikelihood_stream,
                             prior_transform,
                             ndim,
-                            logl_args=(dict_data, ),
+                            logl_args=(dict_data['r_data'], dict_data['r_err'], ),
                             nlive=nlive,
                             sample='rslice')  # rslice
     dns.run_nested(n_effective=10000)
