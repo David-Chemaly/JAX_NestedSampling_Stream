@@ -113,3 +113,6 @@ def loglikelihood_data(p, r_data, r_err):
     logl = jax.lax.cond(jnp.all(jnp.isnan(r_meds)), all_nan_case, some_good_case, operand=None)
 
     return logl
+
+def wrapper_loglikelihood_data(p, r_data, r_err):
+    return loglikelihood_data(p, r_data, r_err)

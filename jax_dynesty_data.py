@@ -11,7 +11,7 @@ import jax.numpy as jnp
 print(jax.devices())
 
 from model import jax_stream_model, backward_integrate_orbit_leapfrog
-from loglikelihood import loglikelihood_data
+from loglikelihood import loglikelihood_data, wrapper_loglikelihood_data
 import dynesty
 import dynesty.utils as dyut
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     nthreads = os.cpu_count()
     mp.set_start_method("spawn", force=True)
     with mp.Pool(nthreads) as poo:
-        dns = dynesty.DynamicNestedSampler(loglikelihood_data,
+        dns = dynesty.DynamicNestedSampler(wrapper_loglikelihood_data,
                                 prior_transform,
                                 ndim,
                                 logl_args=(dict_data['r_data'], dict_data['r_err'], ),
