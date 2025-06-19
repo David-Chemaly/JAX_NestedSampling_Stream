@@ -11,7 +11,7 @@ import jax.numpy as jnp
 print(jax.devices())
 
 from model import jax_stream_model, backward_integrate_orbit_leapfrog
-from loglikelihood import loglikelihood_data, wrapper_loglikelihood_data
+from loglikelihood import loglikelihood_data, wrapper_loglikelihood_data, wrapper_loglikelihood_data_chris
 import dynesty
 import dynesty.utils as dyut
 
@@ -66,10 +66,6 @@ def prior_transform_chris(p):
         scipy.special.ndtri(_) for _ in [dirx, diry, 0.5 + dirz/2]
     ]
 
-    r  = np.sqrt(dirx1**2 + diry1**2 + dirz1**2) 
-    q  = np.exp(-r**2/2) * (np.sqrt(np.pi) * np.exp(r**2/2) * scipy.special.erf(r/np.sqrt(2)) - np.sqrt(2)*r)/np.sqrt(np.pi)
-    q1 = 0.5 + q
-
     logm1 = (7 + 2*logm) 
     rs1   = (1 + 2*rs)
 
@@ -87,7 +83,7 @@ def prior_transform_chris(p):
 
     sig1 = 10*sig0
 
-    return [logM1, Rs1, q1, dirx1, diry1, dirz1, 
+    return [logM1, Rs1, dirx1, diry1, dirz1, 
             logm1, rs1,
             x1, z1, vx1, vy1, vz1,
             t1, a1, sig1]
@@ -105,7 +101,7 @@ if __name__ == "__main__":
     nthreads = os.cpu_count()
     mp.set_start_method("spawn", force=True)
     with mp.Pool(nthreads) as poo:
-        dns = dynesty.DynamicNestedSampler(wrapper_loglikelihood_data,
+        dns = dynesty.DynamicNestedSampler(wrapper_loglikelihood_data_chris,
                                 prior_transform_chris,
                                 ndim,
                                 logl_args=(dict_data['r_data'], dict_data['r_err'], ),

@@ -1,5 +1,7 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
+import scipy
 from model import jax_stream_model, jax_stream_orbit
 
 BAD_VAL = -1e100
@@ -116,3 +118,18 @@ def loglikelihood_data(p, r_data, r_err):
 
 def wrapper_loglikelihood_data(p, r_data, r_err):
     return loglikelihood_data(p, r_data, r_err)
+
+def wrapper_loglikelihood_data_chris(p, r_data, r_err):
+    logM, Rs, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, t0, a0, sig0 = p
+
+    r  = np.sqrt(dirx**2 + diry**2 + dirz**2) 
+    q  = np.exp(-r**2/2) * (np.sqrt(np.pi) * np.exp(r**2/2) * scipy.special.erf(r/np.sqrt(2)) - np.sqrt(2)*r)/np.sqrt(np.pi)
+    q1 = 0.5 + q
+
+    p1 = jnp.array([
+        logM, Rs, q1, dirx, diry, dirz,
+        logm, rs,
+        x0, z0, vx0, vy0, vz0,
+        t0, a0, sig0
+    ])
+    return loglikelihood_data(p1, r_data, r_err)
