@@ -53,7 +53,7 @@ def prior_transform(p):
             x1, z1, vx1, vy1, vz1,
             t1, a1, sig1]
 
-def prior_transform_better(p):
+def prior_transform_chris(p):
     #ndim = 15
     logM, Rs, dirx, diry, dirz, \
     logm, rs, \
@@ -95,7 +95,7 @@ def prior_transform_better(p):
 if __name__ == "__main__":
     # Get data
     nlive  = 5000
-    ndim   = 16
+    ndim   = 15
 
     PATH_DATA = '/data/dc824-2/SGA_Tracks'
     name      = 'UGC09239_factor2.5_pixscale0.6' #'NGC0804_factor3.0_pixscale0.6' #'PGC1092512_factor2.5_pixscale0.6' #'UGC09239_factor2.5_pixscale0.6' #'ESO356-012_factor2.5_pixscale0.6' #NAMES[i]
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
     with mp.Pool(nthreads) as poo:
         dns = dynesty.DynamicNestedSampler(wrapper_loglikelihood_data,
-                                prior_transform,
+                                prior_transform_chris,
                                 ndim,
                                 logl_args=(dict_data['r_data'], dict_data['r_err'], ),
                                 nlive=nlive,
