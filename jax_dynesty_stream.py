@@ -14,7 +14,7 @@ import dynesty
 import dynesty.utils as dyut
 
 def prior_transform(p):
-    #ndim = 13
+    #ndim = 15
     logM, Rs, q, dirx, diry, dirz, \
     logm, rs, \
     x0, z0, vx0, vy0, vz0, \

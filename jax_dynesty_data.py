@@ -1,15 +1,17 @@
+import os
 import pickle
 import scipy
 import corner
 import matplotlib.pyplot as plt
 import numpy as np
+import multiprocessing as mp
 
 import jax
 import jax.numpy as jnp
 print(jax.devices())
 
 from model import jax_stream_model, backward_integrate_orbit_leapfrog
-
+from loglikelihood import loglikelihood_data
 import dynesty
 import dynesty.utils as dyut
 
@@ -51,42 +53,6 @@ def prior_transform(p):
             x1, z1, vx1, vy1, vz1,
             t1, a1, sig1]
 
-@jax.jit
-def loglikelihood_stream(p, r_data, r_err):
-    logM, Rs, q, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, time, alpha, sig = p
-
-    # r_data = dict_data['r_data']
-    # w_data = dict_data['w_data']
-    # r_err = dict_data['r_err']
-    # w_err = dict_data['w_err']
-
-    y0 = 0.
-
-    _, _, _, _, r_meds, w_meds, _, _, _  = jax_stream_model(logM, Rs, q, dirx, diry, dirz, logm, rs, x0, y0, z0, vx0, vy0, vz0, time, alpha, tail=0, min_count=101)
-
-    mask = ~jnp.isnan(r_data)
-
-    # Count how many predictions are bad
-    nan_mask = jnp.isnan(jnp.where(mask, r_meds, 0.0))
-    n_bad = jnp.sum(nan_mask)
-
-    def all_nan_case(_):
-        return BAD_VAL * r_data.shape[0] #-jnp.inf #
-
-    def some_good_case(_):
-        def good_fit_case(_):
-            res = (r_meds - r_data)**2 / (r_err**2 + sig**2)
-            return -0.5 * jnp.nansum(res)
-
-        def bad_fit_case(_):
-            return BAD_VAL * n_bad #-jnp.inf #
-
-        return jax.lax.cond(n_bad == 0, good_fit_case, bad_fit_case, operand=None)
-
-    logl = jax.lax.cond(jnp.all(jnp.isnan(r_meds)), all_nan_case, some_good_case, operand=None)
-
-    return logl
-
 if __name__ == "__main__":
     # Get data
     nlive  = 5000
@@ -97,13 +63,27 @@ if __name__ == "__main__":
     PATH_SAVE = f'{PATH_DATA}/{name}'
     dict_data = pickle.load(open(f'{PATH_SAVE}/dict_data.pkl', 'rb'))
 
-    dns = dynesty.DynamicNestedSampler(loglikelihood_stream,
-                            prior_transform,
-                            ndim,
-                            logl_args=(dict_data['r_data'], dict_data['r_err'], ),
-                            nlive=nlive,
-                            sample='rslice')  # rslice
-    dns.run_nested(n_effective=10000)
+    nthreads = os.cpu_count()
+    mp.set_start_method("spawn", force=True)
+    with mp.Pool(nthreads) as poo:
+        dns = dynesty.DynamicNestedSampler(loglikelihood_data,
+                                prior_transform,
+                                ndim,
+                                logl_args=(dict_data['r_data'], dict_data['r_err'], ),
+                                nlive=nlive,
+                                sample='rslice',  
+                                pool=poo,
+                                queue_size=nthreads * 2)
+        dns.run_nested(n_effective=10000)
+
+
+    # dns = dynesty.DynamicNestedSampler(loglikelihood_stream,
+    #                         prior_transform,
+    #                         ndim,
+    #                         logl_args=(dict_data['r_data'], dict_data['r_err'], ),
+    #                         nlive=nlive,
+    #                         sample='rslice')  # rslice
+    # dns.run_nested(n_effective=10000)
 
     # Extract results
     res = dns.results
