@@ -117,9 +117,6 @@ def loglikelihood_data(p, r_data, r_err):
     return logl
 
 def wrapper_loglikelihood_data(p, r_data, r_err):
-    return loglikelihood_data(p, r_data, r_err)
-
-def wrapper_loglikelihood_data_chris(p, r_data, r_err):
     logM, Rs, dirx, diry, dirz, logm, rs, x0, z0, vx0, vy0, vz0, t0, a0, sig0 = p
 
     r  = np.sqrt(dirx**2 + diry**2 + dirz**2) 
@@ -132,4 +129,5 @@ def wrapper_loglikelihood_data_chris(p, r_data, r_err):
         x0, z0, vx0, vy0, vz0,
         t0, a0, sig0
     ])
+    
     return loglikelihood_data(p1, r_data, r_err)
