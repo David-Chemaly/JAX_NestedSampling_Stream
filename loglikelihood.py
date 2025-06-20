@@ -100,15 +100,15 @@ def loglikelihood_data(p, r_data, r_err):
     n_bad = jnp.sum(nan_mask)
 
     def all_nan_case(_):
-        return BAD_VAL * r_data.shape[0] #-jnp.inf #
+        return -jnp.inf #BAD_VAL * r_data.shape[0] #-jnp.inf #
 
     def some_good_case(_):
         def good_fit_case(_):
-            res = (r_meds - r_data)**2 / (r_err**2 + sig**2)
+            res = (r_meds - r_data)**2 / (r_err**2 + sig**2) + jnp.log(r_err**2 + sig**2)
             return -0.5 * jnp.nansum(res)
 
         def bad_fit_case(_):
-            return BAD_VAL * n_bad #-jnp.inf #
+            return -jnp.inf #BAD_VAL * n_bad #-jnp.inf #
 
         return jax.lax.cond(n_bad == 0, good_fit_case, bad_fit_case, operand=None)
 
@@ -124,10 +124,10 @@ def wrapper_loglikelihood_data_chris(p, r_data, r_err):
 
     r  = np.sqrt(dirx**2 + diry**2 + dirz**2) 
     q  = np.exp(-r**2/2) * (np.sqrt(np.pi) * np.exp(r**2/2) * scipy.special.erf(r/np.sqrt(2)) - np.sqrt(2)*r)/np.sqrt(np.pi)
-    q1 = 0.5 + q
+    q += 0.5
 
     p1 = jnp.array([
-        logM, Rs, q1, dirx, diry, dirz,
+        logM, Rs, q, dirx, diry, dirz,
         logm, rs,
         x0, z0, vx0, vy0, vz0,
         t0, a0, sig0
